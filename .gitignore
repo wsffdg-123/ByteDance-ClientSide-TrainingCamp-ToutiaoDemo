@@ -1,0 +1,29 @@
+# Gradle
+.gradle/
+build/
+**/build/
+!gradle-wrapper.jar
+
+# Local configuration
+local.properties
+
+# IDE
+.idea/
+*.iml
+
+# OS files
+.DS_Store
+
+# NDK / CMake
+.cxx/
+externalNativeBuild/
+
+# Captures
+captures/
+
+# Keystore (如果你本地有 key)
+*.jks
+*.keystore
+
+# Misc
+*.log
