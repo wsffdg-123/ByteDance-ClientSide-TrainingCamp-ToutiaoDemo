@@ -12,6 +12,7 @@ interface NewsApi {
     @GET("v1/news/list")
     suspend fun getNewsList(
         @Query("category") category: String,
-        @Query("page") page: Int
+        @Query("page") page: Int,
+        @Query("refresh_id") refreshId: Long? = null
     ): NewsResponse
 }

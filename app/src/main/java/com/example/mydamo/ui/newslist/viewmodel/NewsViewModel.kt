@@ -25,7 +25,25 @@ class NewsViewModel @Inject constructor(
     private var currentPage = 1
 
     init {
-        // ViewModel 初始化时自动加载数据
+        // 核心修改 1: 在 ViewModel 初始化时，启动一个协程永久观察数据库变化。
+        viewModelScope.launch {
+            // 我们只观察第一页的数据流（代表整个列表）
+            repository.getNewsStream(page = 1)
+                .collect { result ->
+                    // 数据库一旦有变化（新增、刷新），这里就会自动更新 UI。
+                    _state.update { currentState ->
+                        currentState.copy(
+                            isLoading = false,
+                            isRefreshing = false, // 无论如何，数据库更新成功后，结束刷新或加载状态
+                            newsItems = result.items,
+                            errorMessage = result.error,
+                            canLoadMore = result.items.isNotEmpty() // 假设逻辑
+                        )
+                    }
+                }
+        }
+
+        // 首次启动时，触发一次网络请求，获取最新数据并填充缓存
         loadData()
     }
 
@@ -33,25 +51,34 @@ class NewsViewModel @Inject constructor(
      * 加载/刷新第一页数据 (包含缓存策略)
      */
     fun loadData() {
-        if (_state.value.isLoading || _state.value.isPaginating) return
-
-        _state.update { it.copy(isLoading = true, errorMessage = null) }
-        currentPage = 1
+        // 确保不会重复触发刷新（现在只需要检查 isRefreshing 即可）
+        if (_state.value.isRefreshing) return
 
         viewModelScope.launch {
-            repository.getNewsStream(page = currentPage)
-                .collect { result ->
-                    // Flow 收集到的数据可能是缓存或网络最新数据
-                    _state.update { currentState ->
-                        currentState.copy(
-                            isLoading = false,
-                            newsItems = result.items, // 接收到的数据
-                            errorMessage = result.error,
-                            // 假设如果返回的列表小于 pageSize，则没有更多数据了
-                            canLoadMore = result.items.isNotEmpty()
-                        )
-                    }
+            // 1. 更新状态：进入刷新状态，通知 UI 显示加载指示器
+            _state.update { it.copy(isRefreshing = true, errorMessage = null) }
+
+            try {
+                // 2. 触发网络请求和数据库写入 (不会阻塞此协程)
+                val newRefreshId = System.currentTimeMillis()
+                repository.refreshCacheAndNetwork(refreshId = newRefreshId)
+
+                // 成功后：数据会被 init 块中的 Flow 自动接收和更新。
+
+            } catch (e: Exception) {
+                // 3. 失败时：更新错误状态，并取消刷新指示器
+                _state.update {
+                    it.copy(
+                        isRefreshing = false,
+                        errorMessage = "刷新失败: ${e.message}"
+                    )
                 }
+            }
+            // 注意：这里不需要手动设置 isRefreshing = false，它会由 Flow 接收到新数据时自动处理。
+            // 但如果需要确保网络请求完成后立即关闭刷新状态，可以放在 finally 块中（视具体业务逻辑而定）。
+            /* finally {
+                _state.update { it.copy(isRefreshing = false) }
+            } */
         }
     }
 

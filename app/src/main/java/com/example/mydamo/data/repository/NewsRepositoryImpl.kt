@@ -36,9 +36,9 @@ class NewsRepositoryImpl @Inject constructor(
                 val newsItems = entities.map { it.toDomain() }
 
                 // 仅在获取第一页数据时 (page=1)，才触发网络请求和刷新逻辑
-                if (page == 1) {
-                    refreshCacheAndNetwork()
-                }
+//                if (page == 1) {
+//                    refreshCacheAndNetwork()
+//                }
 
                 // 2. 将数据包装为 NewsResult
                 NewsResult(items = newsItems)
@@ -67,16 +67,19 @@ class NewsRepositoryImpl @Inject constructor(
      * 负责后台刷新缓存的 Suspend 函数
      */
     @OptIn(DelicateCoroutinesApi::class)
-    private fun refreshCacheAndNetwork() {
+    override suspend fun refreshCacheAndNetwork(refreshId: Long) {
         //强制执行最小延迟时间
-        val minDelayTime = 500L
+        val minDelayTime = 300L
         val startTime = System.currentTimeMillis()
 
         // 在新的协程中执行网络请求和数据库写入，不阻塞 Flow 的映射
         GlobalScope.launch(Dispatchers.IO) {
             try {
                 // 假设网络请求始终请求第一页最新数据
-                val response = newsApi.getNewsList(category = DEFAULT_CATEGORY, page = 1)
+                val response = newsApi.getNewsList(
+                    category = DEFAULT_CATEGORY,
+                    page = 1,
+                    refreshId = refreshId)
 
                 if (response.code == 200) {
                     // 仅当网络请求成功时，清除旧缓存并插入新数据

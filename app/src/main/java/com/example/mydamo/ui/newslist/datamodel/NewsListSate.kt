@@ -8,6 +8,8 @@ import com.example.mydamo.data.api.NewsItem
 data class NewsListState(
     // 当前是否正在加载第一页或刷新
     val isLoading: Boolean = false,
+    // 用于下拉刷新
+    val isRefreshing: Boolean = false,
     // 当前是否正在加载更多 (分页)
     val isPaginating: Boolean = false,
     // 新闻列表数据

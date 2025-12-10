@@ -1,16 +1,24 @@
 package com.example.mydamo.ui.newslist
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.mydamo.ui.newslist.components.NewsCardSingleImage
 import com.example.mydamo.ui.newslist.viewmodel.NewsViewModel
 
@@ -24,46 +32,42 @@ fun NewsListScreen(
     viewModel: NewsViewModel = hiltViewModel()
 ) {
     // 观察 ViewModel 暴露的 StateFlow
-    val state by viewModel.state.collectAsState()
+    val state by viewModel.state.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
             TopAppBar(title = { Text("头条推荐") })
         }
     ) { paddingValues ->
-        Box(
+        // --- 使用 PullToRefreshBox 包裹内容 ---
+        PullToRefreshBox(
+            // 绑定 ViewModel 的 isRefreshing 状态
+            isRefreshing = state.isRefreshing,
+            // 绑定刷新触发事件
+            onRefresh = { viewModel.loadData() },
             modifier = Modifier
-                .fillMaxSize()
                 .padding(paddingValues)
+                .fillMaxSize()
         ) {
 
-            // --- 1. 渲染新闻列表 ---
-            if (state.newsItems.isNotEmpty()) {
+            // --- 列表内容，直接放入 LazyColumn ---
+            if (state.newsItems.isEmpty() && state.isLoading) {
+                // 首次加载（列表为空）时，显示居中加载指示器
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            } else if (state.errorMessage != null && state.newsItems.isEmpty()) {
+                // 错误状态
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(text = "加载失败: ${state.errorMessage}", color = MaterialTheme.colorScheme.error)
+                }
+            } else {
+
+                // 实际的列表内容 (包括分页逻辑)
                 NewsListContent(
                     state = state,
                     onLoadMore = viewModel::loadMore
                 )
-            }
-
-            // --- 2. 渲染初始加载状态或空数据状态 ---
-            else if (state.isLoading) {
-                // 初次加载时显示全屏加载指示器
-                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-            } else if (state.errorMessage != null) {
-                // 显示错误信息
-                Text(
-                    text = "加载失败: ${state.errorMessage}",
-                    modifier = Modifier.align(Alignment.Center),
-                    color = MaterialTheme.colorScheme.error
-                )
-            } else {
-                // 显示空数据提示
-                Button(
-                    onClick = { viewModel.loadData() },
-                    modifier = Modifier.align(Alignment.Center)
-                ) {
-                    Text("暂无数据，点击重试")
-                }
             }
         }
     }
@@ -85,7 +89,10 @@ private fun NewsListContent(
 
             // 触发加载更多的逻辑：当滚动到倒数第5个元素时，且可以加载更多，则触发。
             if (index >= state.newsItems.size - 5 && state.canLoadMore && !state.isPaginating) {
-                onLoadMore()
+                // SideEffect 确保在 Composable 渲染期间执行副作用操作
+                SideEffect {
+                    onLoadMore()
+                }
             }
 
             // 渲染新闻卡片，这里仅以单图卡片为例
@@ -100,7 +107,8 @@ private fun NewsListContent(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(8.dp),
-                    horizontalArrangement = Arrangement.Center
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     CircularProgressIndicator(modifier = Modifier.size(24.dp))
                     Spacer(Modifier.width(8.dp))
@@ -110,7 +118,8 @@ private fun NewsListContent(
         }
 
         // 渲染没有更多数据提示
-        if (!state.canLoadMore && !state.isLoading && state.newsItems.isNotEmpty()) {
+        //if (!state.canLoadMore && !state.isLoading && state.newsItems.isNotEmpty()) {
+        if (!state.canLoadMore && !state.isPaginating && state.newsItems.isNotEmpty()) {
             item {
                 Text(
                     text = "— 已加载全部内容 —",

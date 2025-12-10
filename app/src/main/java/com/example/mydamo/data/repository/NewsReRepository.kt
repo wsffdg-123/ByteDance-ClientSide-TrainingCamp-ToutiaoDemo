@@ -34,4 +34,6 @@ interface NewsRepository {
      * @return 仅包含网络数据的 NewsResult
      */
     suspend fun fetchNews(page: Int): NewsResult
+
+    suspend fun refreshCacheAndNetwork(refreshId: Long)
 }
