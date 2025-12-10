@@ -1,10 +1,13 @@
 package com.example.mydamo.ui.newslist.viewmodel
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.mydamo.data.repository.NewsRepository
 import com.example.mydamo.ui.newslist.datamodel.NewsListState
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,8 +27,42 @@ class NewsViewModel @Inject constructor(
 
     private var currentPage = 1
 
+    private val handler = CoroutineExceptionHandler { _, exception ->
+        // 当有未捕获的异常发生时，这里会被调用
+        Log.e("NewsViewModel", "未捕获的协程异常: $exception")
+
+        // 从异常中解析出用户友好的信息
+        val message = when (exception) {
+            // 捕获网络连接类问题
+            is java.net.SocketTimeoutException, is java.net.UnknownHostException -> {
+                "网络连接超时或不可达，请检查您的网络。"
+            }
+            // 捕获 HTTP 错误 (500, 404, 400 等)
+            is retrofit2.HttpException -> {
+                // 可以根据错误码进行更精细的判断
+                when (exception.code()) {
+                    500 -> "服务器内部错误，请稍后再试。"
+                    404 -> "请求资源不存在。"
+                    else -> "网络请求失败: HTTP ${exception.code()}"
+                }
+            }
+            // 其他所有异常
+            else -> {
+                exception.message ?: "系统错误，请联系客服。"
+            }
+        }
+
+        // 更新 UI 状态
+        _state.update {
+            it.copy(
+                isRefreshing = false,
+                isLoading = false,
+                errorMessage = message // 显示错误信息
+            )
+        }
+    }
+
     init {
-        // 核心修改 1: 在 ViewModel 初始化时，启动一个协程永久观察数据库变化。
         viewModelScope.launch {
             // 我们只观察第一页的数据流（代表整个列表）
             repository.getNewsStream(page = 1)
@@ -54,31 +91,13 @@ class NewsViewModel @Inject constructor(
         // 确保不会重复触发刷新（现在只需要检查 isRefreshing 即可）
         if (_state.value.isRefreshing) return
 
-        viewModelScope.launch {
-            // 1. 更新状态：进入刷新状态，通知 UI 显示加载指示器
+        viewModelScope.launch(handler) {
+            // 更新状态：进入刷新状态，通知 UI 显示加载指示器
             _state.update { it.copy(isRefreshing = true, errorMessage = null) }
 
-            try {
-                // 2. 触发网络请求和数据库写入 (不会阻塞此协程)
-                val newRefreshId = System.currentTimeMillis()
-                repository.refreshCacheAndNetwork(refreshId = newRefreshId)
-
-                // 成功后：数据会被 init 块中的 Flow 自动接收和更新。
-
-            } catch (e: Exception) {
-                // 3. 失败时：更新错误状态，并取消刷新指示器
-                _state.update {
-                    it.copy(
-                        isRefreshing = false,
-                        errorMessage = "刷新失败: ${e.message}"
-                    )
-                }
-            }
-            // 注意：这里不需要手动设置 isRefreshing = false，它会由 Flow 接收到新数据时自动处理。
-            // 但如果需要确保网络请求完成后立即关闭刷新状态，可以放在 finally 块中（视具体业务逻辑而定）。
-            /* finally {
-                _state.update { it.copy(isRefreshing = false) }
-            } */
+            // 触发网络请求和数据库写入 (不会阻塞此协程)
+            val newRefreshId = System.currentTimeMillis()
+            repository.refreshCacheAndNetwork(refreshId = newRefreshId)
         }
     }
 
@@ -92,21 +111,16 @@ class NewsViewModel @Inject constructor(
         _state.update { it.copy(isPaginating = true, errorMessage = null) }
         currentPage++
 
-        viewModelScope.launch {
-            try {
-                // 仅请求网络数据，不走缓存，并追加到现有列表
-                val newItems = repository.fetchNews(page = currentPage).items
+        viewModelScope.launch(handler) {
+            // 仅请求网络数据，不走缓存，并追加到现有列表
+            val newItems = repository.fetchNews(page = currentPage).items
 
-                _state.update { currentState ->
-                    currentState.copy(
-                        isPaginating = false,
-                        newsItems = currentState.newsItems + newItems, // 追加新数据
-                        canLoadMore = newItems.isNotEmpty()
-                    )
-                }
-            } catch (e: Exception) {
-                // 处理加载更多时的错误
-                _state.update { it.copy(isPaginating = false, errorMessage = "加载更多失败: ${e.message}") }
+            _state.update { currentState ->
+                currentState.copy(
+                    isPaginating = false,
+                    newsItems = currentState.newsItems + newItems, // 追加新数据
+                    canLoadMore = newItems.isNotEmpty()
+                )
             }
         }
     }

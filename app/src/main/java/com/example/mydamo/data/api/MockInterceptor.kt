@@ -3,6 +3,7 @@ package com.example.mydamo.data.api
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.ResponseBody.Companion.toResponseBody
+import java.net.SocketTimeoutException
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import kotlin.random.Random
@@ -33,20 +34,52 @@ class MockInterceptor @Inject constructor() : Interceptor {
 
         val refreshId = url.queryParameter("refresh_id")
 
-        val mockResponseBody = when {
-            path.endsWith("/v1/news/list") -> getMockResponseByPage(page, refreshId)
-            else -> getErrorResponse("Unknown path: $path")
-        }
+        // 检查全局错误模式
+        when (MockErrorController.errorMode) {
+            ErrorMode.TIMEOUT -> {
+                // 模拟网络连接错误
+                throw SocketTimeoutException("Mock: 连接超时，模拟网络不可达！")
+            }
+            ErrorMode.HTTP_500 -> {
+                // 模拟 HTTP 业务错误 (500)
+                return Response.Builder()
+                    .code(500)
+                    .message("Internal Server Error: Mock Test")
+                    .request(request)
+                    .protocol(Protocol.HTTP_1_1)
+                    .body(getErrorResponseBody(500, "服务器维护中，请稍后重试。").toResponseBody(JSON_MEDIA_TYPE))
+                    .addHeader("content-type", "application/json")
+                    .build()
+            }
+            ErrorMode.NONE -> {
+                // --- 正常数据返回逻辑 ---
+                val mockResponseBody = when {
+                    path.endsWith("/v1/news/list") -> getMockResponseByPage(page, refreshId)
+                    else -> getErrorResponse("Unknown path: $path")
+                }
 
-        return Response.Builder()
-            .code(200) // 始终返回 200 成功状态码
-            .message("OK")
-            .request(request)
-            .protocol(Protocol.HTTP_1_1)
-            .body(mockResponseBody.toResponseBody(JSON_MEDIA_TYPE))
-            .addHeader("content-type", "application/json")
-            .build()
+                return Response.Builder()
+                    .code(200) // 返回 200 成功状态码
+                    .message("OK")
+                    .request(request)
+                    .protocol(Protocol.HTTP_1_1)
+                    .body(mockResponseBody.toResponseBody(JSON_MEDIA_TYPE))
+                    .addHeader("content-type", "application/json")
+                    .build()
+            }
+        }
     }
+
+    /**
+     * 网络错误模拟
+     */
+    private fun getErrorResponseBody(code: Int, message: String) = """
+        {
+            "code": $code,
+            "message": "$message",
+            "data": []
+        }
+    """.trimIndent()
 
     /**
      * 根据页码返回不同的模拟 JSON 数据
@@ -59,9 +92,9 @@ class MockInterceptor @Inject constructor() : Interceptor {
             }
         }
         return when (page) {
-            1 -> generateMockNewsJson(10, startId = 100)
-            2 -> generateMockNewsJson(10, startId = 100)
-            3 -> generateMockNewsJson(10, startId = 100)
+            1 -> generateMockNewsJson(5, startId = 100)
+            2 -> generateMockNewsJson(5, startId = 100)
+            3 -> generateMockNewsJson(5, startId = 100)
             else -> getErrorResponse("No more data (Page $page)") // 模拟没有更多数据
         }
     }

@@ -32,15 +32,11 @@ class NewsRepositoryImpl @Inject constructor(
         // 确保在 IO 线程进行数据处理
         return newsDao.getAllNewsFlow()
             .map { entities ->
-                // 1. 数据库 Flow 监听：将 NewsEntity 列表映射为 NewsItem 列表
+                // 数据库 Flow 监听：将 NewsEntity 列表映射为 NewsItem 列表
                 val newsItems = entities.map { it.toDomain() }
 
-                // 仅在获取第一页数据时 (page=1)，才触发网络请求和刷新逻辑
-//                if (page == 1) {
-//                    refreshCacheAndNetwork()
-//                }
 
-                // 2. 将数据包装为 NewsResult
+                // 将数据包装为 NewsResult
                 NewsResult(items = newsItems)
             }
     }
@@ -86,10 +82,18 @@ class NewsRepositoryImpl @Inject constructor(
                     //newsDao.clearAll() //数据量太小时不clear的增量更新效果更好
                     newsDao.insertAll(response.data.map { it.toEntity() })
                 } else {
-                    // 可选：处理网络错误
+                    // 处理网络错误
+                    throw Exception("API 业务错误: ${response.message}")
                 }
             } catch (e: Exception) {
-                // 可选：处理网络异常
+                // 处理网络异常
+                throw e
+            } finally {
+                // 确保最小延迟
+                val elapsedTime = System.currentTimeMillis() - startTime
+                if (elapsedTime < minDelayTime) {
+                    delay(minDelayTime - elapsedTime)
+                }
             }
 
             //计算已用时间，并延迟到最小加载时间

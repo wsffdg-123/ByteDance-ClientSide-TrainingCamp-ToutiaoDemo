@@ -51,7 +51,26 @@ fun NewsListScreen(
         ) {
 
             // --- 列表内容，直接放入 LazyColumn ---
-            if (state.newsItems.isEmpty() && state.isLoading) {
+            if (state.newsItems.isEmpty() && state.errorMessage != null && !state.isRefreshing) {
+
+                // 显示错误信息和重试按钮
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = state.errorMessage!!,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
+                    Button(
+                        onClick = { viewModel.loadData() } // 点击重试
+                    ) {
+                        Text("点击重试")
+                    }
+                }
+            }else if (state.newsItems.isEmpty() && state.isLoading) {
                 // 首次加载（列表为空）时，显示居中加载指示器
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
